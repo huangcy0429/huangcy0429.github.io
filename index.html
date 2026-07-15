@@ -163,6 +163,45 @@
     margin: 0 0 16px;
     max-width: 66ch;
   }
+  .formula-row {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .formula-row .stage-sub { margin-bottom: 0; flex: 1 1 320px; }
+  .symbol-note {
+    flex: 0 0 250px;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--signal);
+    border-radius: 4px;
+    padding: 10px 14px 12px;
+  }
+  .symbol-note .title {
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-style: italic;
+    color: var(--signal);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin: 0 0 8px;
+  }
+  .symbol-note dl { margin: 0; }
+  .symbol-note dt {
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "Roboto Mono", Consolas, monospace;
+    font-size: 0.78rem;
+    color: var(--ink);
+    margin-top: 7px;
+  }
+  .symbol-note dt:first-child { margin-top: 0; }
+  .symbol-note dd {
+    margin: 2px 0 0;
+    font-size: 0.76rem;
+    color: var(--ink-dim);
+    line-height: 1.4;
+  }
   .scrollx { overflow-x: auto; }
 
   .byte-grid {
@@ -361,7 +400,24 @@
 
   <section class="panel stage">
     <div class="stage-head"><span class="stage-num">04</span><h2 class="stage-title">展開排程　Message Schedule</h2></div>
-    <p class="stage-sub">前 16 個字直接取自區塊；其餘 <span class="mono">W[16..63]</span> 以公式展開：<span class="mono">W[t] = σ1(W[t-2]) + W[t-7] + σ0(W[t-15]) + W[t-16]</span>。</p>
+    <div class="formula-row">
+      <p class="stage-sub">前 16 個字直接取自區塊；其餘 <span class="mono">W[16..63]</span> 以公式展開：<span class="mono">W[t] = σ1(W[t-2]) + W[t-7] + σ0(W[t-15]) + W[t-16]</span>。</p>
+      <aside class="symbol-note">
+        <p class="title">符號說明</p>
+        <dl>
+          <dt>ROTR<sup>n</sup>(x)</dt>
+          <dd>將 32-bit 字 x 向右「循環」旋轉 n 位，移出的位元從左邊補回。</dd>
+          <dt>SHR<sup>n</sup>(x)</dt>
+          <dd>將 x 向右移位 n 位，空出的位元補 0（非循環）。</dd>
+          <dt>σ0(x)</dt>
+          <dd>= ROTR<sup>7</sup>(x) ⊕ ROTR<sup>18</sup>(x) ⊕ SHR<sup>3</sup>(x)</dd>
+          <dt>σ1(x)</dt>
+          <dd>= ROTR<sup>17</sup>(x) ⊕ ROTR<sup>19</sup>(x) ⊕ SHR<sup>10</sup>(x)</dd>
+          <dt>⊕</dt>
+          <dd>位元 XOR（互斥或）運算。</dd>
+        </dl>
+      </aside>
+    </div>
     <div class="scrollx">
       <div class="sched-wrap">
         <table class="sched">
@@ -374,7 +430,24 @@
 
   <section class="panel stage">
     <div class="stage-head"><span class="stage-num">05</span><h2 class="stage-title">壓縮函式　64 輪主迴圈</h2></div>
-    <p class="stage-sub">每輪以 <span class="mono">T1 = h + Σ1(e) + Ch(e,f,g) + K[t] + W[t]</span> 與 <span class="mono">T2 = Σ0(a) + Maj(a,b,c)</span> 更新暫存器，並將 a-h 向右移位。使用下方控制列逐輪播放。</p>
+    <div class="formula-row">
+      <p class="stage-sub">每輪以 <span class="mono">T1 = h + Σ1(e) + Ch(e,f,g) + K[t] + W[t]</span> 與 <span class="mono">T2 = Σ0(a) + Maj(a,b,c)</span> 更新暫存器，並將 a-h 向右移位。使用下方控制列逐輪播放。</p>
+      <aside class="symbol-note">
+        <p class="title">符號說明</p>
+        <dl>
+          <dt>Σ0(a)</dt>
+          <dd>= ROTR<sup>2</sup>(a) ⊕ ROTR<sup>13</sup>(a) ⊕ ROTR<sup>22</sup>(a)</dd>
+          <dt>Σ1(e)</dt>
+          <dd>= ROTR<sup>6</sup>(e) ⊕ ROTR<sup>11</sup>(e) ⊕ ROTR<sup>25</sup>(e)</dd>
+          <dt>Ch(e,f,g)</dt>
+          <dd>= (e ∧ f) ⊕ (¬e ∧ g)　依 e 的每個位元，從 f 或 g「選擇」對應位元。</dd>
+          <dt>Maj(a,b,c)</dt>
+          <dd>= (a∧b) ⊕ (a∧c) ⊕ (b∧c)　三者中「多數決」為 1 的位元才是 1。</dd>
+          <dt>∧ ／ ¬</dt>
+          <dd>位元 AND／NOT 運算。</dd>
+        </dl>
+      </aside>
+    </div>
     <div class="scrollx">
       <div class="registers" id="regGrid"></div>
     </div>
