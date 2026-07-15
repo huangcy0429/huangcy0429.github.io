@@ -1,0 +1,722 @@
+<meta charset="UTF-8" />
+<title>SHA-256 逐步演算</title>
+<style>
+  :root {
+    --bg: #f5f1e8;
+    --surface: #fffdf7;
+    --surface-2: #ece5d4;
+    --ink: #201d16;
+    --ink-dim: #6b6455;
+    --rule: #ddd3bd;
+    --signal: #146b6b;
+    --signal-soft: rgba(20,107,107,0.13);
+    --settled: #a85a1c;
+    --settled-soft: rgba(168,90,28,0.13);
+    --pad: #9c4a4a;
+    --pad-soft: rgba(156,74,74,0.12);
+    --shadow: 0 1px 2px rgba(32,29,22,0.06), 0 6px 20px rgba(32,29,22,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161a;
+      --surface: #171c21;
+      --surface-2: #1e252b;
+      --ink: #ece7da;
+      --ink-dim: #98a09a;
+      --rule: #2b333a;
+      --signal: #55d6d6;
+      --signal-soft: rgba(85,214,214,0.14);
+      --settled: #e0a458;
+      --settled-soft: rgba(224,164,88,0.14);
+      --pad: #e08a8a;
+      --pad-soft: rgba(224,138,138,0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161a; --surface: #171c21; --surface-2: #1e252b; --ink: #ece7da; --ink-dim: #98a09a;
+    --rule: #2b333a; --signal: #55d6d6; --signal-soft: rgba(85,214,214,0.14);
+    --settled: #e0a458; --settled-soft: rgba(224,164,88,0.14); --pad: #e08a8a; --pad-soft: rgba(224,138,138,0.14);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 24px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f1e8; --surface: #fffdf7; --surface-2: #ece5d4; --ink: #201d16; --ink-dim: #6b6455;
+    --rule: #ddd3bd; --signal: #146b6b; --signal-soft: rgba(20,107,107,0.13);
+    --settled: #a85a1c; --settled-soft: rgba(168,90,28,0.13); --pad: #9c4a4a; --pad-soft: rgba(156,74,74,0.12);
+    --shadow: 0 1px 2px rgba(32,29,22,0.06), 0 6px 20px rgba(32,29,22,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .font-display { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif; }
+  .mono {
+    font-family: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", "JetBrains Mono", "Roboto Mono", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 96px; }
+
+  header.hero { margin-bottom: 32px; }
+  header.hero .eyebrow {
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-dim);
+    font-size: 0.95rem;
+    margin: 0 0 6px;
+  }
+  header.hero h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    font-size: clamp(1.7rem, 3.4vw, 2.35rem);
+    font-weight: 600;
+    margin: 0 0 10px;
+    text-wrap: balance;
+    letter-spacing: 0.01em;
+  }
+  header.hero p {
+    color: var(--ink-dim);
+    max-width: 62ch;
+    margin: 0;
+    font-size: 0.98rem;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+  }
+
+  .control-panel {
+    padding: 18px 20px;
+    margin-bottom: 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .control-panel label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .control-panel textarea {
+    width: 100%;
+    resize: vertical;
+    min-height: 64px;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    color: var(--ink);
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "Roboto Mono", Consolas, monospace;
+    font-size: 0.95rem;
+    padding: 10px 12px;
+  }
+  .control-panel textarea:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  .tab:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: var(--ink-dim);
+  }
+  .control-row .count { color: var(--ink); }
+
+  .stage {
+    padding: 22px 24px 26px;
+    margin-bottom: 22px;
+  }
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .stage-num {
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-style: italic;
+    color: var(--signal);
+    font-size: 0.95rem;
+    flex-shrink: 0;
+  }
+  .stage-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  .stage-sub {
+    color: var(--ink-dim);
+    font-size: 0.88rem;
+    margin: 0 0 16px;
+    max-width: 66ch;
+  }
+  .scrollx { overflow-x: auto; }
+
+  .byte-grid {
+    display: grid;
+    grid-template-columns: repeat(16, minmax(26px, 1fr));
+    gap: 3px;
+    min-width: 460px;
+  }
+  .byte {
+    text-align: center;
+    font-size: 0.72rem;
+    padding: 4px 0;
+    border-radius: 3px;
+    background: var(--surface-2);
+    color: var(--ink-dim);
+  }
+  .byte.data { color: var(--ink); }
+  .byte.marker { background: var(--settled-soft); color: var(--settled); font-weight: 700; }
+  .byte.zero { opacity: 0.55; }
+  .byte.length { background: var(--signal-soft); color: var(--signal); font-weight: 600; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 0.78rem; color: var(--ink-dim); }
+  .legend span.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tab {
+    font-family: ui-monospace, monospace;
+    font-size: 0.78rem;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: var(--surface-2);
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .tab.active { background: var(--signal-soft); color: var(--signal); border-color: var(--signal); font-weight: 600; }
+
+  .word-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    min-width: 440px;
+  }
+  .word-cell {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 8px 10px;
+  }
+  .word-cell .idx { font-size: 0.68rem; color: var(--ink-dim); display: block; margin-bottom: 2px; }
+  .word-cell .val { font-size: 0.86rem; }
+
+  table.sched {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 480px;
+    font-size: 0.82rem;
+  }
+  table.sched th {
+    position: sticky; top: 0;
+    background: var(--surface);
+    text-align: left;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.sched td { padding: 4px 10px; border-bottom: 1px solid var(--rule); }
+  table.sched tr.copied td:last-child { color: var(--ink-dim); }
+  table.sched tr.expanded td:last-child { color: var(--signal); }
+  .sched-wrap { max-height: 280px; overflow-y: auto; border: 1px solid var(--rule); border-radius: 4px; }
+
+  .registers { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; min-width: 560px; }
+  .reg {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 10px 6px;
+    text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .reg .name { font-family: "Iowan Old Style", Georgia, serif; font-style: italic; color: var(--ink-dim); font-size: 0.9rem; }
+  .reg .val { font-size: 0.78rem; margin-top: 4px; word-break: break-all; }
+  .reg.moved { border-color: var(--signal); background: var(--signal-soft); }
+  .reg.computed { border-color: var(--settled); background: var(--settled-soft); }
+  @media (prefers-reduced-motion: reduce) { .reg { transition: none; } }
+
+  .round-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 24px;
+    margin: 16px 0;
+    font-size: 0.84rem;
+  }
+  .round-meta .row { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed var(--rule); padding: 3px 0; }
+  .round-meta .k { color: var(--ink-dim); }
+
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .transport button {
+    font-family: ui-monospace, monospace;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 6px 11px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .transport button:hover { border-color: var(--signal); color: var(--signal); }
+  .transport button.primary { background: var(--signal-soft); color: var(--signal); border-color: var(--signal); font-weight: 600; }
+  .transport input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--signal); }
+  .round-label { font-size: 0.8rem; color: var(--ink-dim); white-space: nowrap; }
+  .round-label b { color: var(--ink); }
+
+  .hupdate { width: 100%; border-collapse: collapse; font-size: 0.84rem; min-width: 440px; }
+  .hupdate td { padding: 5px 10px; border-bottom: 1px solid var(--rule); }
+  .hupdate td.op { color: var(--ink-dim); text-align: center; width: 24px; }
+  .hupdate td.res { color: var(--settled); font-weight: 600; }
+
+  .digest-box {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 18px 20px;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    word-break: break-all;
+    color: var(--settled);
+  }
+  .digest-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .copy-btn {
+    font-family: -apple-system, sans-serif;
+    background: var(--signal-soft);
+    color: var(--signal);
+    border: 1px solid var(--signal);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .copy-btn:hover { filter: brightness(1.08); }
+  .copy-msg { font-size: 0.8rem; color: var(--ink-dim); }
+
+  footer { text-align: center; color: var(--ink-dim); font-size: 0.78rem; margin-top: 36px; }
+</style>
+
+<div class="page">
+  <header class="hero">
+    <p class="eyebrow font-display">密碼學雜湊　·　逐步演算</p>
+    <h1>SHA-256 視覺化計算器</h1>
+    <p>輸入任意文字，觀察它如何被編碼成位元組、依規則填充、切成 512-bit 區塊，再逐輪走過壓縮函式的 64 輪運算，最終產生 256-bit 雜湊值。</p>
+  </header>
+
+  <div class="panel control-panel">
+    <label for="msgInput">輸入訊息（UTF-8 編碼，上限 500 字元）</label>
+    <textarea id="msgInput" maxlength="500">Hello, SHA-256!</textarea>
+    <div class="control-row">
+      <span>位元組數：<b class="count mono" id="byteCount">-</b></span>
+      <span>填充後長度：<b class="count mono" id="paddedCount">-</b> bytes</span>
+      <span>區塊數：<b class="count mono" id="blockCount">-</b></span>
+    </div>
+  </div>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">01</span><h2 class="stage-title">編碼　Encode</h2></div>
+    <p class="stage-sub">文字先以 UTF-8 轉換為位元組序列，這是雜湊運算實際處理的原始資料。</p>
+    <div class="scrollx"><div class="byte-grid" id="encodeGrid"></div></div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">02</span><h2 class="stage-title">填充　Pad</h2></div>
+    <p class="stage-sub">在訊息尾端加入一個 <span class="mono">0x80</span> 位元組、若干個 <span class="mono">0x00</span>，最後附上以 64-bit 大端序表示的原始位元長度，使總長度恰為 512 的倍數。</p>
+    <div class="scrollx"><div class="byte-grid" id="padGrid"></div></div>
+    <div class="legend">
+      <div><span class="sw" style="background:var(--surface-2)"></span>原始資料</div>
+      <div><span class="sw" style="background:var(--settled-soft)"></span>結束標記 0x80</div>
+      <div><span class="sw" style="background:var(--surface-2);opacity:.55"></span>零填充</div>
+      <div><span class="sw" style="background:var(--signal-soft)"></span>64-bit 長度欄位</div>
+    </div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">03</span><h2 class="stage-title">分區塊　Split</h2></div>
+    <p class="stage-sub">每 512 bits（64 bytes）切成一個區塊，並視為 16 個 32-bit 大端序字組 <span class="mono">M[0..15]</span>。</p>
+    <div class="tabs" id="blockTabs"></div>
+    <div class="scrollx"><div class="word-grid" id="blockWords"></div></div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">04</span><h2 class="stage-title">展開排程　Message Schedule</h2></div>
+    <p class="stage-sub">前 16 個字直接取自區塊；其餘 <span class="mono">W[16..63]</span> 以公式展開：<span class="mono">W[t] = σ1(W[t-2]) + W[t-7] + σ0(W[t-15]) + W[t-16]</span>。</p>
+    <div class="scrollx">
+      <div class="sched-wrap">
+        <table class="sched">
+          <thead><tr><th>t</th><th>W[t]</th><th>來源</th></tr></thead>
+          <tbody id="schedBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">05</span><h2 class="stage-title">壓縮函式　64 輪主迴圈</h2></div>
+    <p class="stage-sub">每輪以 <span class="mono">T1 = h + Σ1(e) + Ch(e,f,g) + K[t] + W[t]</span> 與 <span class="mono">T2 = Σ0(a) + Maj(a,b,c)</span> 更新暫存器，並將 a-h 向右移位。使用下方控制列逐輪播放。</p>
+    <div class="scrollx">
+      <div class="registers" id="regGrid"></div>
+    </div>
+    <div class="round-meta">
+      <div class="row"><span class="k">T1</span><span class="mono" id="t1Val">-</span></div>
+      <div class="row"><span class="k">T2</span><span class="mono" id="t2Val">-</span></div>
+      <div class="row"><span class="k">K[t]</span><span class="mono" id="ktVal">-</span></div>
+      <div class="row"><span class="k">W[t]</span><span class="mono" id="wtVal">-</span></div>
+    </div>
+    <div class="transport">
+      <button id="btnStart" title="回到第一輪">|&lt;</button>
+      <button id="btnPrev">&lt; 上一輪</button>
+      <button id="btnPlay" class="primary">▶ 播放</button>
+      <button id="btnNext">下一輪 &gt;</button>
+      <button id="btnEnd" title="跳到最後一輪">&gt;|</button>
+      <input type="range" id="roundSlider" min="0" max="63" value="0" />
+      <span class="round-label">輪次 <b id="roundLabel">t = 0</b> / 63</span>
+    </div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">06</span><h2 class="stage-title">狀態更新　H = H + {a..h}</h2></div>
+    <p class="stage-sub">本區塊 64 輪結束後的暫存器，逐一加回進入本區塊前的雜湊狀態，得到新的 <span class="mono">H0..H7</span>。</p>
+    <div class="scrollx">
+      <table class="hupdate" id="hUpdateTable"></table>
+    </div>
+  </section>
+
+  <section class="panel stage">
+    <div class="stage-head"><span class="stage-num">07</span><h2 class="stage-title">最終摘要　Digest</h2></div>
+    <p class="stage-sub">所有區塊處理完畢後，串接 <span class="mono">H0..H7</span> 即為最終的 256-bit（64 個十六進位字元）雜湊值。</p>
+    <div class="digest-box mono" id="digestOut">-</div>
+    <div class="digest-row">
+      <button class="copy-btn" id="copyBtn">複製雜湊值</button>
+      <span class="copy-msg" id="copyMsg"></span>
+    </div>
+  </section>
+
+  <footer>純前端運算，訊息內容不會送出或儲存。實作依 FIPS 180-4 規範。</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ];
+  const H_INIT = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+
+  function rotr(x, n) { return ((x >>> n) | (x << (32 - n))) >>> 0; }
+  function hex8(x) { return (x >>> 0).toString(16).padStart(8, "0"); }
+  function hex2(x) { return x.toString(16).padStart(2, "0"); }
+
+  function padMessage(bytes) {
+    const bitLen = BigInt(bytes.length) * 8n;
+    const out = Array.from(bytes);
+    const originalLen = bytes.length;
+    out.push(0x80);
+    while (out.length % 64 !== 56) out.push(0x00);
+    for (let i = 7; i >= 0; i--) out.push(Number((bitLen >> BigInt(i * 8)) & 0xffn));
+    return { padded: new Uint8Array(out), originalLen, markerIdx: originalLen, lengthStart: out.length - 8 };
+  }
+
+  function bytesToWords(chunk) {
+    const w = new Array(16);
+    for (let i = 0; i < 16; i++) {
+      w[i] = ((chunk[i*4] << 24) | (chunk[i*4+1] << 16) | (chunk[i*4+2] << 8) | chunk[i*4+3]) >>> 0;
+    }
+    return w;
+  }
+
+  function expandSchedule(M16) {
+    const W = new Array(64);
+    for (let t = 0; t < 16; t++) W[t] = M16[t];
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(W[t-15], 7) ^ rotr(W[t-15], 18) ^ (W[t-15] >>> 3);
+      const s1 = rotr(W[t-2], 17) ^ rotr(W[t-2], 19) ^ (W[t-2] >>> 10);
+      W[t] = (W[t-16] + s0 + W[t-7] + s1) >>> 0;
+    }
+    return W;
+  }
+
+  function compressWithTrace(H, W) {
+    let [a,b,c,d,e,f,g,h] = H;
+    const rounds = [];
+    for (let t = 0; t < 64; t++) {
+      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+      const ch = ((e & f) ^ (~e & g)) >>> 0;
+      const T1 = (h + S1 + ch + K[t] + W[t]) >>> 0;
+      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+      const maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
+      const T2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + T1) >>> 0;
+      d = c; c = b; b = a; a = (T1 + T2) >>> 0;
+      rounds.push({ t, Wt: W[t], Kt: K[t], T1, T2, a, b, c, d, e, f, g, h });
+    }
+    const Hnew = [
+      (H[0]+a)>>>0, (H[1]+b)>>>0, (H[2]+c)>>>0, (H[3]+d)>>>0,
+      (H[4]+e)>>>0, (H[5]+f)>>>0, (H[6]+g)>>>0, (H[7]+h)>>>0
+    ];
+    return { rounds, Hnew };
+  }
+
+  function sha256Trace(message) {
+    const bytes = new TextEncoder().encode(message);
+    const { padded, originalLen, markerIdx, lengthStart } = padMessage(bytes);
+    const numBlocks = padded.length / 64;
+    const blocks = [];
+    for (let i = 0; i < numBlocks; i++) blocks.push(padded.slice(i*64, i*64+64));
+
+    let H = H_INIT.slice();
+    const perBlock = [];
+    for (const block of blocks) {
+      const M16 = bytesToWords(block);
+      const W = expandSchedule(M16);
+      const Hbefore = H.slice();
+      const { rounds, Hnew } = compressWithTrace(H, W);
+      perBlock.push({ M16, W, Hbefore, rounds, Hafter: Hnew });
+      H = Hnew;
+    }
+    const digestHex = H.map(hex8).join("");
+    return { bytes, padded, originalLen, markerIdx, lengthStart, blocks, perBlock, digestHex, finalH: H };
+  }
+
+  // ---------- Rendering ----------
+  const els = {
+    input: document.getElementById("msgInput"),
+    byteCount: document.getElementById("byteCount"),
+    paddedCount: document.getElementById("paddedCount"),
+    blockCount: document.getElementById("blockCount"),
+    encodeGrid: document.getElementById("encodeGrid"),
+    padGrid: document.getElementById("padGrid"),
+    blockTabs: document.getElementById("blockTabs"),
+    blockWords: document.getElementById("blockWords"),
+    schedBody: document.getElementById("schedBody"),
+    regGrid: document.getElementById("regGrid"),
+    t1Val: document.getElementById("t1Val"),
+    t2Val: document.getElementById("t2Val"),
+    ktVal: document.getElementById("ktVal"),
+    wtVal: document.getElementById("wtVal"),
+    roundSlider: document.getElementById("roundSlider"),
+    roundLabel: document.getElementById("roundLabel"),
+    hUpdateTable: document.getElementById("hUpdateTable"),
+    digestOut: document.getElementById("digestOut"),
+    copyBtn: document.getElementById("copyBtn"),
+    copyMsg: document.getElementById("copyMsg"),
+    btnStart: document.getElementById("btnStart"),
+    btnPrev: document.getElementById("btnPrev"),
+    btnPlay: document.getElementById("btnPlay"),
+    btnNext: document.getElementById("btnNext"),
+    btnEnd: document.getElementById("btnEnd"),
+  };
+
+  let state = null;
+  let currentBlock = 0;
+  let currentRound = 0;
+  let playing = false;
+  let playTimer = null;
+  const REG_NAMES = ["a","b","c","d","e","f","g","h"];
+
+  function renderEncode() {
+    els.byteCount.textContent = state.bytes.length;
+    els.encodeGrid.innerHTML = "";
+    state.bytes.forEach((byte) => {
+      const cell = document.createElement("div");
+      cell.className = "byte data";
+      cell.textContent = hex2(byte);
+      els.encodeGrid.appendChild(cell);
+    });
+  }
+
+  function renderPad() {
+    els.paddedCount.textContent = state.padded.length;
+    els.blockCount.textContent = state.blocks.length;
+    els.padGrid.innerHTML = "";
+    state.padded.forEach((byte, i) => {
+      const cell = document.createElement("div");
+      cell.textContent = hex2(byte);
+      if (i < state.markerIdx) cell.className = "byte data";
+      else if (i === state.markerIdx) cell.className = "byte marker";
+      else if (i >= state.lengthStart) cell.className = "byte length";
+      else cell.className = "byte zero";
+      els.padGrid.appendChild(cell);
+    });
+  }
+
+  function renderBlockTabs() {
+    els.blockTabs.innerHTML = "";
+    state.blocks.forEach((_, i) => {
+      const btn = document.createElement("button");
+      btn.className = "tab" + (i === currentBlock ? " active" : "");
+      btn.textContent = "區塊 " + i;
+      btn.addEventListener("click", () => { currentBlock = i; setRound(0); renderAll(false); });
+      els.blockTabs.appendChild(btn);
+    });
+  }
+
+  function renderBlockWords() {
+    const pb = state.perBlock[currentBlock];
+    els.blockWords.innerHTML = "";
+    pb.M16.forEach((w, i) => {
+      const cell = document.createElement("div");
+      cell.className = "word-cell";
+      cell.innerHTML = '<span class="idx">M[' + i + ']</span><span class="val mono">' + hex8(w) + "</span>";
+      els.blockWords.appendChild(cell);
+    });
+  }
+
+  function renderSchedule() {
+    const pb = state.perBlock[currentBlock];
+    els.schedBody.innerHTML = "";
+    pb.W.forEach((w, t) => {
+      const tr = document.createElement("tr");
+      tr.className = t < 16 ? "copied" : "expanded";
+      tr.innerHTML = "<td>" + t + '</td><td class="mono">' + hex8(w) + "</td><td>" +
+        (t < 16 ? "= M[" + t + "]" : "σ 展開") + "</td>";
+      els.schedBody.appendChild(tr);
+    });
+  }
+
+  function renderRegisters() {
+    const pb = state.perBlock[currentBlock];
+    const before = currentRound === 0 ? pb.Hbefore : pb.rounds[currentRound - 1];
+    const beforeVals = currentRound === 0
+      ? pb.Hbefore
+      : [before.a, before.b, before.c, before.d, before.e, before.f, before.g, before.h];
+    const r = pb.rounds[currentRound];
+    const afterVals = [r.a, r.b, r.c, r.d, r.e, r.f, r.g, r.h];
+
+    els.regGrid.innerHTML = "";
+    REG_NAMES.forEach((name, i) => {
+      const cell = document.createElement("div");
+      let cls = "reg";
+      // a and e are freshly computed this round; the rest are shifted from a neighbor
+      if (i === 0 || i === 4) cls += " computed";
+      else cls += " moved";
+      cell.className = cls;
+      cell.innerHTML = '<div class="name font-display">' + name + '</div><div class="val mono">' + hex8(afterVals[i]) + "</div>";
+      els.regGrid.appendChild(cell);
+    });
+
+    els.t1Val.textContent = hex8(r.T1);
+    els.t2Val.textContent = hex8(r.T2);
+    els.ktVal.textContent = hex8(r.Kt);
+    els.wtVal.textContent = hex8(r.Wt);
+    els.roundLabel.textContent = "t = " + currentRound;
+    els.roundSlider.value = currentRound;
+  }
+
+  function renderHUpdate() {
+    const pb = state.perBlock[currentBlock];
+    const last = pb.rounds[63];
+    const finalRegs = [last.a, last.b, last.c, last.d, last.e, last.f, last.g, last.h];
+    els.hUpdateTable.innerHTML = "";
+    for (let i = 0; i < 8; i++) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td class="mono">H' + i + " = " + hex8(pb.Hbefore[i]) + '</td>' +
+        '<td class="op">+</td>' +
+        '<td class="mono">' + REG_NAMES[i] + " = " + hex8(finalRegs[i]) + '</td>' +
+        '<td class="op">=</td>' +
+        '<td class="mono res">' + hex8(pb.Hafter[i]) + "</td>";
+      els.hUpdateTable.appendChild(tr);
+    }
+  }
+
+  function renderDigest() {
+    const grouped = state.digestHex.match(/.{1,8}/g).join("  ");
+    els.digestOut.textContent = grouped;
+  }
+
+  function setRound(t) {
+    currentRound = Math.max(0, Math.min(63, t));
+  }
+
+  function renderAll(keepTabs) {
+    if (keepTabs !== false) renderBlockTabs();
+    else renderBlockTabs();
+    renderBlockWords();
+    renderSchedule();
+    renderRegisters();
+    renderHUpdate();
+  }
+
+  function compute() {
+    stopPlay();
+    const msg = els.input.value;
+    state = sha256Trace(msg);
+    currentBlock = 0;
+    currentRound = 0;
+    renderEncode();
+    renderPad();
+    renderAll();
+    renderDigest();
+  }
+
+  function stopPlay() {
+    playing = false;
+    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    els.btnPlay.textContent = "▶ 播放";
+  }
+
+  els.btnStart.addEventListener("click", () => { stopPlay(); setRound(0); renderRegisters(); });
+  els.btnEnd.addEventListener("click", () => { stopPlay(); setRound(63); renderRegisters(); });
+  els.btnPrev.addEventListener("click", () => { stopPlay(); setRound(currentRound - 1); renderRegisters(); });
+  els.btnNext.addEventListener("click", () => { stopPlay(); setRound(currentRound + 1); renderRegisters(); });
+  els.roundSlider.addEventListener("input", (e) => { stopPlay(); setRound(parseInt(e.target.value, 10)); renderRegisters(); });
+  els.btnPlay.addEventListener("click", () => {
+    if (playing) { stopPlay(); return; }
+    playing = true;
+    els.btnPlay.textContent = "⏸ 暫停";
+    playTimer = setInterval(() => {
+      if (currentRound >= 63) { stopPlay(); return; }
+      setRound(currentRound + 1);
+      renderRegisters();
+    }, 450);
+  });
+
+  els.copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(state.digestHex);
+      els.copyMsg.textContent = "已複製到剪貼簿";
+    } catch (err) {
+      els.copyMsg.textContent = "複製失敗，請手動選取";
+    }
+    setTimeout(() => { els.copyMsg.textContent = ""; }, 2000);
+  });
+
+  let debounceTimer = null;
+  els.input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(compute, 250);
+  });
+
+  compute();
+})();
+</script>
